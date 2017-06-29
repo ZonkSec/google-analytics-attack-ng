@@ -3,12 +3,12 @@ import requests
 import re
 import time
 import random
-from google import google
+#from google import google
 
 #https://developers.google.com/analytics/devguides/collection/protocol/v1/
 
 def main():
-    test = analytics_request(document_referrer="http://hacker.com", document_location="https://zonksec.com",tracking_id='UA-72589501-1',client_id=999)
+    test = analytics_request(document_referrer="http://hackerzzz.com", document_location="https://zonksec.com/me",tracking_id='UA-72589501-1',client_id=549,geo_id='1007949')
     test.send()
 
 class session:
@@ -48,10 +48,12 @@ class analytics_request:
         params['cid'] = self.client_id
         params['t'] = self.hit_type
         params['aip'] = self.anon_ip
-        params['d'] = self.document_location
+        params['dl'] = self.document_location
         params['dr'] =self.document_referrer
+        params['geoid'] = self.geo_id
+        params['ua'] = self.user_agent
 
-        r = requests.get('https://www.google-analytics.com/collect', params=params)
+        r = requests.post('https://www.google-analytics.com/collect', data=params)
         print(r)
 
 
