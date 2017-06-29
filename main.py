@@ -3,31 +3,37 @@ import requests
 import re
 import time
 import random
-#from google import google
+import google
 
 #https://developers.google.com/analytics/devguides/collection/protocol/v1/
+#https://developers.google.com/analytics/devguides/collection/protocol/v1/geoid
 
 def main():
-    test = analytics_request(document_referrer="http://hackerzzz.com", document_location="https://zonksec.com/me",tracking_id='UA-72589501-1',client_id=549,geo_id='1007949')
-    test.send()
+    #test = analytics_request(document_referrer="http://hackerzzz.com", document_location="https://zonksec.com/me",tracking_id='UA-72589501-1',client_id=559,geo_id='1007949')
+    #test.send()
 
+    # search_results = google.search(query='site:zonksec.com',num=10,stop=1)
+    # test =[]
+    # for result in search_results:
+    #     test.append(result)
+    # print test
+
+    test = session('http://zonksec.com',bounces=5)
+    print test.bounce_urls
 class session:
-    def __init__(self, target_urls, bounce_urls, page_delay=3000, page_delay_jitter=10, bounces=0):
+    def __init__(self, target_urls, bounce_urls = None, page_delay=3000, page_delay_jitter=10, bounces=0):
         self.target_urls = target_urls
         self.page_delay = page_delay
         self.page_delay_jitter = page_delay_jitter
         self.bounces = bounces
         self.bounce_urls = bounce_urls
 
-        if bounces != 0 and bounces < 10 and bounce_urls is None:
-            search_results = google.search("site:"+target_urls, 10)
+        if self.bounces > 0 and self.bounce_urls is None:
+            self.bounce_urls = []
+            search_results = google.search(query="site:"+self.target_urls, num=self.bounces,stop=1)
             for result in search_results:
-                bounce_urls.append(result.link)
+                self.bounce_urls.append(str(result))
 
-        else:
-            search_results = google.search("site:"+target_urls, bounces)
-            for result in search_results:
-                bounce_urls.append(result.link)
 
 class analytics_request:
     def __init__(self,document_referrer,document_location,tracking_id,client_id,version=1,hit_type='pageview',user_agent ='Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36',geo_id ='US', anon_ip =1):
