@@ -13,13 +13,14 @@ from threading import Thread
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    session = single_page_attack_session(target_url='http://zonksec.com', referral_url='https://test.com/mypage.php', bounces=2, session_jitter=.50,session_delay=30, end_with=True)
+    session = single_page_attack_session(target_url='http://zonksec.com', referral_url='https://test.com/mypage.php', bounces=2, session_jitter=.50,session_delay=5, end_with=True,geo_id=1021747)
     single_page_attack(session=session, number_of_sessions=5, threads=2)
 
 
 
 
-def single_page_attack(session, number_of_sessions, threads=1, delay=30, jitter=.50):
+
+def single_page_attack(session, number_of_sessions, threads=1, delay=5, jitter=.50):
     session_queue = Queue()
     logging.info('[*] Queueing %s sessions.', str(number_of_sessions))
     for _ in range(number_of_sessions):
@@ -35,23 +36,23 @@ def single_page_attack(session, number_of_sessions, threads=1, delay=30, jitter=
 
 def thread_session(i,q,session,delay=5,jitter=.50):
     while True:
-        logging.debug('[+] Thread'+str(i)+': Starting a session')
         q.get()
-        session.random_unique_cid()
-        output = session.run()
-        logging.info('[+] Thread' + str(i) + ': Session complete. CID: '+str(session.client_id)+'. Path: '+output)
+        cid = session.random_unique_cid()
+        logging.debug('[+] Thread' + str(i) + ': Starting a session. CID: ' + str(cid))
+        behavior = session.run(client_id=cid)
+        logging.info('[+] Thread' + str(i) + ': Session complete. CID: '+str(cid)+'. Behavior: '+behavior)
         time_delay = delay - random.randint(0, int(delay * jitter))
         logging.info('[*] Thread' + str(i) + ': Sleeping for '+str(time_delay))
         time.sleep(time_delay)
         q.task_done()
 
-
 class single_page_attack_session:
-    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.10, bounces=0, loop=1, end_with=True, tracking_id=None):
+    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, loop=1, end_with=True, tracking_id=None, geo_id=''):
         self.target_url = target_url
         self.referral_url = referral_url
         self.page_delay = session_delay
         self.page_delay_jitter = session_jitter
+        self.geo_id = geo_id
         self.bounces = bounces
         self.bounce_urls = bounce_urls
         self.loop=loop
@@ -93,39 +94,41 @@ class single_page_attack_session:
                 unique = False
             else:
                 unique = True
+                self.used_cids.append(cid)
                 self.client_id = cid
+        return cid
 
 
     def run(self,client_id=None):
         if client_id is not None:
-            self.client_id = client_id
+            client_id = self.client_id
         pages = []
         loop_count = 0
         last_page = self.referral_url
         pages.append(last_page)
         while loop_count < self.loop:
-            target_request = analytics_request(document_location=self.target_url,document_referrer=last_page,client_id=self.client_id,tracking_id=self.tracking_id)
+            target_request = analytics_request(document_location=self.target_url,document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=self.geo_id)
             target_request.send()
-            pages.append(self.target_url)
+            pages.append('[T]'+self.target_url)
             bounce_count = 0
             last_page = self.target_url
             while (bounce_count < self.bounces):
-                delay = self.page_delay - random.randint(0,(self.page_delay * self.page_delay_jitter))
+                delay = self.page_delay - random.randint(0,int(self.page_delay * self.page_delay_jitter))
                 logging.debug('[*] Session sleep for %i seconds.', delay)
                 time.sleep(delay)
-                bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,9)],document_referrer=last_page,client_id=self.client_id,tracking_id=self.tracking_id)
+                bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,9)],document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=self.geo_id)
                 bounce_request.send()
                 pages.append(bounce_request.document_location)
                 last_page = bounce_request.document_location
                 bounce_count += 1
             loop_count += 1
         if self.end_with:
-            delay = self.page_delay - random.randint(0, (self.page_delay * self.page_delay_jitter))
+            delay = self.page_delay - random.randint(0, int(self.page_delay * self.page_delay_jitter))
             logging.debug('[*] Session sleep for %i seconds.', delay)
             time.sleep(delay)
-            target_request = analytics_request(document_location=self.target_url, document_referrer=last_page, client_id=self.client_id,tracking_id=self.tracking_id)
+            target_request = analytics_request(document_location=self.target_url, document_referrer=last_page, client_id=client_id,tracking_id=self.tracking_id,geo_id=self.geo_id)
             target_request.send()
-            pages.append(self.target_url)
+            pages.append('[T]'+self.target_url)
 
         behavior = ''
         for page in pages:
