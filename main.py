@@ -12,9 +12,9 @@ from threading import Thread
 #https://developers.google.com/analytics/devguides/collection/protocol/v1/geoid
 
 def main():
-    logging.basicConfig(level=logging.DEBUG)
-    session = single_page_attack_session(target_url='http://zonksec.com', referral_url='http://lol.com', bounces=0, session_jitter=0,session_delay=0, end_with=True)
-    single_page_attack(session=session, number_of_sessions=5, threads=1,delay=5,jitter=.10)
+    logging.basicConfig(level=logging.INFO)
+    session = single_page_attack_session(target_url='http://zonksec.com', referral_url='https://test.com/mypage.php', bounces=2, session_jitter=.50,session_delay=30, end_with=True)
+    single_page_attack(session=session, number_of_sessions=5, threads=2)
 
 
 
@@ -33,15 +33,16 @@ def single_page_attack(session, number_of_sessions, threads=1, delay=30, jitter=
     session_queue.join()
     logging.info('[*] Single Page Attack Complete.')
 
-def thread_session(i,q,session,delay=0,jitter=0):
+def thread_session(i,q,session,delay=5,jitter=.50):
     while True:
         logging.debug('[+] Thread'+str(i)+': Starting a session')
         q.get()
         session.random_unique_cid()
         output = session.run()
-        logging.info('[+] Thread' + str(i) + ': Session '+str(session.client_id)+' complete. Path: '+output)
-        #time_delay = delay - random.randint(0, (delay * jitter))
-        #time.sleep(time_delay)
+        logging.info('[+] Thread' + str(i) + ': Session complete. CID: '+str(session.client_id)+'. Path: '+output)
+        time_delay = delay - random.randint(0, int(delay * jitter))
+        logging.info('[*] Thread' + str(i) + ': Sleeping for '+str(time_delay))
+        time.sleep(time_delay)
         q.task_done()
 
 
