@@ -22,10 +22,10 @@ def main():
         #'https': 'https://192.168.0.107:8080'
     }
     logging.basicConfig(level=logging.INFO)
-    #session = referer_page_attack_session(target_url='http://zonksec.com', referral_url='https://hackerman.com/', bounces=2, session_jitter=.50,session_delay=5, end_with=True)
-    #single_page_attack(session=session, number_of_sessions=5, threads=2)
-    session = site_attack(target_site='http://zonksec.com',referral_keyword='hacker blog',target_site_url_pool=5,referral_pool=10, bounces=2,session_delay=0,session_jitter=0)
-    session.run(client_id=402)
+    session = referer_page_attack_session(target_url='http://zonksec.com', referral_url='https://hackerman.com/', bounces=2,bounce_jitter=.50,session_jitter=.50,session_delay=5, end_with=True)
+    single_page_attack(session=session, number_of_sessions=5, threads=2)
+    #session = site_attack(target_site='http://zonksec.com',referral_keyword='hacker blog',target_site_url_pool=5,referral_pool=10, bounces=2,session_delay=0,session_jitter=0)
+    #session.run(client_id=402)
 
 
 
@@ -58,7 +58,7 @@ def thread_session(i,q,session,delay=5,jitter=.50):
         q.task_done()
 
 class referer_page_attack_session:
-    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, loop=1, end_with=True, tracking_id=None, geo_id=''):
+    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, loop=1, end_with=True, tracking_id=None, geo_id='',bounce_jitter=.50):
         self.target_url = target_url
         self.referral_url = referral_url
         self.page_delay = session_delay
@@ -72,6 +72,7 @@ class referer_page_attack_session:
         self.client_id = self.random_unique_cid()
         self.tracking_id = tracking_id
         self.bounce_pool = bounce_pool
+        self.bounce_jitter = bounce_jitter
 
         #end_with logic
         if self.bounces == 0:
@@ -118,7 +119,8 @@ class referer_page_attack_session:
             pages.append('[T]'+self.target_url)
             bounce_count = 0
             last_page = self.target_url
-            while (bounce_count < self.bounces):
+            bounce_end = self.bounces - random.randint(0,int(self.bounces * self.bounce_jitter))
+            while (bounce_count < bounce_end):
                 delay = self.page_delay - random.randint(0,int(self.page_delay * self.page_delay_jitter))
                 logging.debug('[*] Session sleep for %i seconds.', delay)
                 time.sleep(delay)
