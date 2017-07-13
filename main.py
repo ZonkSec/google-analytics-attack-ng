@@ -41,7 +41,7 @@ def main():
     parser.add_argument('--session_delay',metavar='',help='amount of seconds between bounces in a session',type=int,default=0)
     parser.add_argument('--session_jitter',metavar='',help='amount of randomness in session_delay',type=jitter_type,default=0)
     parser.add_argument('--end_with',action="store_true",help='end with a bounce to target page')
-    parser.add_argument('--proxy', help='use a proxy to make requests. note: google searches not included', metavar='')
+    parser.add_argument('--proxy', help='use a HTTP or SOCKS proxy to make requests. note: google searches not included', metavar='')
     parser.add_argument('--ignore_certs', help='ignore ssl certs when making requests. note: google searches not included',action="store_true")
     args = parser.parse_args()
 
@@ -49,6 +49,7 @@ def main():
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
+        logging.getLogger("requests").setLevel(logging.WARNING)
 
     if args.mode == 'referral_attack':
         if not args.target_url or not args.referral_url or not args.number_of_sessions:
