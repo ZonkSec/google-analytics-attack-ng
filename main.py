@@ -8,6 +8,7 @@ import logging
 from Queue import Queue
 from threading import Thread
 import argparse
+from urlparse import urlparse
 
 #https://developers.google.com/analytics/devguides/collection/protocol/v1/
 #https://developers.google.com/analytics/devguides/collection/protocol/v1/geoid
@@ -25,19 +26,21 @@ def main():
     }
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m','--mode',choices=['referral_attack', 'traffic_attack'],help='required.',required=True)
+    parser.add_argument('-m','--mode',choices=['referral', 'google_keyword','organic'],help='required.',required=True)
     parser.add_argument('-v', '--verbose', help="increase output verbosity",action="store_true")
-    parser.add_argument('--target_url', help='required for referral_attack mode', metavar='')
-    parser.add_argument('--referral_url', help='required for referral_attack mode',metavar='')
+    parser.add_argument('--target_url',nargs='+', help='one or more URLs to target', metavar='')
+    parser.add_argument('--referral_url',nargs='+', help='one or more URLs to refer traffic from',metavar='')
     parser.add_argument('-n','--number_of_sessions', help='required. total number of sessions to be emulated',metavar='',type=int)
     parser.add_argument('--threads', help='number of threads, aka concurrent sessions', default=1, type=int, metavar='')
+    parser.add_argument('--referral_keyword', metavar='',help='keyword to retrieve referral URLs from Google')
+    parser.add_argument('--referral_pool', metavar='', help='determines # of referral URLs to retrieve from Google based on referral_keyword',type=int,default=20)
     parser.add_argument('--geo_list', help='list of origin geo locations. \'criteriaID\' or \'criteriaIDs-criteriaIDs\'',metavar='',nargs='+')
     parser.add_argument('--user_delay', help='delay between users/threads', default=0, type=int, metavar='')
     parser.add_argument('--user_jitter', help='amount of randomness in user_delay', default=0, type=jitter_type, metavar='')
     parser.add_argument('--bounces', help='number of bounces between target pages',type=int,metavar='',default=0)
     parser.add_argument('--bounce_urls', help='specific URLs to bounce too. If not set, it will be auto-populated via Google Search',nargs='+',metavar='')
     parser.add_argument('--bounce_jitter',metavar='',help='amount of randomness in bounce URL selection',type=jitter_type,default=0)
-    parser.add_argument('--bounce_pool',metavar='',help='determines # of URLs to retreive from Google, if not proving bounce_urls',type=int,default=20)
+    parser.add_argument('--bounce_pool',metavar='',help='determines # of URLs to retrieve from Google, if not proving bounce_urls',type=int,default=20)
     parser.add_argument('--session_delay',metavar='',help='amount of seconds between bounces in a session',type=int,default=0)
     parser.add_argument('--session_jitter',metavar='',help='amount of randomness in session_delay',type=jitter_type,default=0)
     parser.add_argument('--end_with',action="store_true",help='end with a bounce to target page')
@@ -50,12 +53,6 @@ def main():
     else:
         logging.basicConfig(level=logging.INFO)
         logging.getLogger("requests").setLevel(logging.WARNING)
-
-    if args.mode == 'referral_attack':
-        if not args.target_url or not args.referral_url or not args.number_of_sessions:
-            logging.error('[-] target_url,referral_url, and number_of_sessions are required for referral_attack')
-            sys.exit(1)
-
 
     if args.proxy:
         if re.search("(socks5:\/\/.*:.)", args.proxy):
@@ -77,18 +74,32 @@ def main():
     if args.geo_list:
         args.geo_list=build_geo_list(args.geo_list)
     else:
+        logging.info('[*] geo_list not provided. requests will randomize from US cities.')
         args.geo_list = build_geo_list(['1012873-1028514'])
 
     ignore_certs = args.ignore_certs
 
 
 
-    if args.mode == 'referral_attack':
-        session = referral_attack(target_url=args.target_url, referral_url=args.referral_url,bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter, session_jitter=args.session_jitter, session_delay=args.session_delay, end_with=args.end_with,bounce_pool=args.bounce_pool,geo_list=args.geo_list)
+    if args.mode == 'referral':
+        if not args.target_url or not args.referral_url or not args.number_of_sessions:
+            logging.error('[-] target_url,referral_url, and number_of_sessions are required for referral attack')
+            sys.exit(1)
+        session = session_builder(target_url=args.target_url,mode=args.mode, referral_url=args.referral_url, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter, session_jitter=args.session_jitter, session_delay=args.session_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
         thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads, user_delay=args.user_delay, user_jitter=args.user_jitter)
-    elif args.mode == 'traffic_attack':
-        session = traffic_attack(target_site='http://zonksec.com', target_site_urls=args.traffic_urls,referral_keyword='how to hack',target_site_url_pool=5, referral_pool=10, bounces=2, session_delay=0, session_jitter=0)
-        session.run(client_id=402)
+    elif args.mode == 'google_keyword':
+        if not args.target_url or not args.referral_keyword or not args.referral_pool or not args.number_of_sessions:
+            logging.error('[-] target_url,referral_keyword, referral_pool, and number_of_sessions are required for google keyword')
+            sys.exit(1)
+        logging.info('[*] Referral URLs are needed.')
+        referral_urls = []
+        search_results = list(google.search(query=args.referral_keyword, num=args.referral_pool, stop=1))
+        logging.info('[+] Grabbed %s referral URLs using Google', str(sum(1 for i in search_results)))
+        for result in search_results:
+            referral_urls.append(str(result))
+
+        session = session_builder(target_url=args.target_url,mode=args.mode, referral_url=referral_urls, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter, session_jitter=args.session_jitter, session_delay=args.session_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
+        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads, user_delay=args.user_delay, user_jitter=args.user_jitter)
 
 def build_geo_list(geo_list):
     list = []
@@ -122,7 +133,7 @@ def thread_master(session, number_of_sessions, threads=1, user_delay=5, user_jit
         worker.start()
     logging.info('[*] Waiting for threads.')
     session_queue.join()
-    logging.info('[*] Single Page Attack Complete.')
+    logging.info('[+] Attack Complete.')
 
 def thread_worker(i, q, session, delay=5, jitter=.50):
     while True:
@@ -137,16 +148,16 @@ def thread_worker(i, q, session, delay=5, jitter=.50):
         time.sleep(time_delay)
         q.task_done()
 
-class referral_attack:
-    def __init__(self, target_url, referral_url, bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, session_loop=1, end_with=False, tracking_id=None, geo_id='',bounce_jitter=.50,geo_list=None):
+class session_builder:
+    def __init__(self, target_url, referral_url,mode='referral', bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, end_with=False, tracking_id=None, geo_id='',bounce_jitter=.50,geo_list=None):
         self.target_url = target_url
         self.referral_url = referral_url
+        self.mode = mode
         self.page_delay = session_delay
         self.page_delay_jitter = session_jitter
         self.geo_id = geo_id
         self.bounces = bounces
         self.bounce_urls = bounce_urls
-        self.session_loop=session_loop
         self.end_with = end_with
         self.used_cids = []
         self.client_id = self.random_unique_cid()
@@ -159,24 +170,40 @@ class referral_attack:
         if self.bounces == 0:
             self.end_with = False
 
+        #get site url
+        o = urlparse(self.target_url[0])
+        self.target_site = o.scheme + '://'+ o.netloc
+
+        #verify all urls from target list are same domain
+        o = urlparse(self.target_url[0])
+        match = o.netloc
+        for target in target_url:
+            o = urlparse(target)
+            if not o.netloc == match:
+                logging.error('[-] not all target_urls are from same site')
+                sys.exit(1)
+
         #grabs tracking ID from target site.
         if self.tracking_id is None:
-            page = requests.get(target_url,proxies=proxies,verify=(not ignore_certs))
+            logging.info('[*] trackingID not provided. attempting to automatically collect')
+            page = requests.get(self.target_site,proxies=proxies,verify=(not ignore_certs))
             try:
                 m = re.search("'(UA-(.*))',", page.text)
                 self.tracking_id = str(m.group(1))
+                logging.info('[+] trackingID found: ' + self.tracking_id)
             except:
-                logging.error('trackingID not found. target may not be running analytics')
+                logging.error('[-] trackingID not found. target may not be running analytics')
                 sys.exit(1)
 
         #if bounce urls are need, collects them.
         if self.bounces != 0 and self.bounce_urls is None:
             logging.info('[*] Bounce URLs are needed.')
             self.bounce_urls = []
-            search_results = list(google.search(query="site:"+self.target_url, num=self.bounce_pool,stop=1))
+            search_results = list(google.search(query="site:"+self.target_site, num=self.bounce_pool,stop=1))
             logging.info('[+] Grabbed %s bounce URLs using Google', str(sum(1 for i in search_results)))
             for result in search_results:
                 self.bounce_urls.append(str(result))
+
 
     def random_unique_cid(self):
         unique = False
@@ -199,33 +226,34 @@ class referral_attack:
             logging.error('[-] Missing client_id or geo_id')
             sys.exit(1)
         pages = []
-        loop_count = 0
-        last_page = self.referral_url
+
+        selected_target = self.target_url[random.randint(0,len(self.target_url)-1)]
+        selected_referral = self.referral_url[random.randint(0,len(self.referral_url)-1)]
+        last_page = selected_referral
         pages.append(last_page)
-        while loop_count < self.session_loop:
-            target_request = analytics_request(document_location=self.target_url,document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=geo_id)
-            target_request.send()
-            pages.append('[T]'+self.target_url)
-            bounce_count = 0
-            last_page = self.target_url
-            bounce_end = self.bounces - random.randint(0,int(self.bounces * self.bounce_jitter))
-            while (bounce_count < bounce_end):
-                delay = self.page_delay - random.randint(0,int(self.page_delay * self.page_delay_jitter))
-                logging.debug('[*] Session sleep for %i seconds.', delay)
-                time.sleep(delay)
-                bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,len(self.bounce_urls)-1)],document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=geo_id)
-                bounce_request.send()
-                pages.append(bounce_request.document_location)
-                last_page = bounce_request.document_location
-                bounce_count += 1
-            loop_count += 1
+        target_request = analytics_request(document_location=selected_target,document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=geo_id)
+        target_request.send()
+        pages.append('[T]'+selected_target)
+        bounce_count = 0
+        last_page = selected_target
+        bounce_end = self.bounces - random.randint(0,int(self.bounces * self.bounce_jitter))
+        while (bounce_count < bounce_end):
+            delay = self.page_delay - random.randint(0,int(self.page_delay * self.page_delay_jitter))
+            logging.debug('[*] Session sleep for %i seconds.', delay)
+            time.sleep(delay)
+            bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,len(self.bounce_urls)-1)],document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=geo_id)
+            bounce_request.send()
+            pages.append(bounce_request.document_location)
+            last_page = bounce_request.document_location
+            bounce_count += 1
+
         if self.end_with:
             delay = self.page_delay - random.randint(0, int(self.page_delay * self.page_delay_jitter))
             logging.debug('[*] Session sleep for %i seconds.', delay)
             time.sleep(delay)
-            target_request = analytics_request(document_location=self.target_url, document_referrer=last_page, client_id=client_id,tracking_id=self.tracking_id,geo_id=geo_id)
+            target_request = analytics_request(document_location=selected_target, document_referrer=last_page, client_id=client_id,tracking_id=self.tracking_id,geo_id=geo_id)
             target_request.send()
-            pages.append('[T]'+self.target_url)
+            pages.append('[T]'+selected_target)
 
         behavior = ''
         for page in pages:
@@ -364,7 +392,8 @@ class analytics_request:
         params['t'] = self.hit_type
         params['aip'] = self.anon_ip
         params['dl'] = self.document_location
-        params['dr'] =self.document_referrer
+        if not self.document_referrer == '':
+            params['dr'] = self.document_referrer
         params['geoid'] = self.geo_id
         params['ua'] = self.user_agent
 
