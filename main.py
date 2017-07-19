@@ -1,4 +1,5 @@
 import sys
+import os
 import requests #pip install requests[socks] to get socks for TOR
 import re
 import time
@@ -26,12 +27,14 @@ def main():
     }
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m','--mode',choices=['referral', 'google_keyword','organic'],help='required.',required=True)
+    parser.add_argument('-m','--mode',choices=['referral', 'google_keyword','direct','organic'],help='required.',required=True)
     parser.add_argument('-v', '--verbose', help="increase output verbosity",action="store_true")
     parser.add_argument('--target_url',nargs='+', help='one or more URLs to target', metavar='')
     parser.add_argument('--referral_url',nargs='+', help='one or more URLs to refer traffic from',metavar='')
     parser.add_argument('-n','--number_of_sessions', help='required. total number of sessions to be emulated',metavar='',type=int)
     parser.add_argument('--threads', help='number of threads, aka concurrent sessions', default=1, type=int, metavar='')
+    parser.add_argument('--auto_target_pool', help='automatically get target_urls from google, based on host derived from target_url', default=0, type=int, metavar='')
+    parser.add_argument('--auto_target_keyword', help='keyword to get target_urls from google', metavar='')
     parser.add_argument('--referral_keyword', metavar='',help='keyword to retrieve referral URLs from Google')
     parser.add_argument('--referral_pool', metavar='', help='determines # of referral URLs to retrieve from Google based on referral_keyword',type=int,default=20)
     parser.add_argument('--geo_list', help='list of origin geo locations. \'criteriaID\' or \'criteriaIDs-criteriaIDs\'',metavar='',nargs='+')
@@ -80,12 +83,12 @@ def main():
     ignore_certs = args.ignore_certs
 
 
-
+    #gets params and builds session for each mode, then runs threads
     if args.mode == 'referral':
         if not args.target_url or not args.referral_url or not args.number_of_sessions:
             logging.error('[-] target_url,referral_url, and number_of_sessions are required for referral attack')
             sys.exit(1)
-        session = session_builder(target_url=args.target_url,mode=args.mode, referral_url=args.referral_url, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter, session_jitter=args.session_jitter, session_delay=args.session_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
+        session = session_builder(target_url=args.target_url,mode=args.mode,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, referral_url=args.referral_url, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter, session_jitter=args.session_jitter, session_delay=args.session_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
         thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads, user_delay=args.user_delay, user_jitter=args.user_jitter)
     elif args.mode == 'google_keyword':
         if not args.target_url or not args.referral_keyword or not args.referral_pool or not args.number_of_sessions:
@@ -97,9 +100,20 @@ def main():
         logging.info('[+] Grabbed %s referral URLs using Google', str(sum(1 for i in search_results)))
         for result in search_results:
             referral_urls.append(str(result))
-
-        session = session_builder(target_url=args.target_url,mode=args.mode, referral_url=referral_urls, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter, session_jitter=args.session_jitter, session_delay=args.session_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
+        session = session_builder(target_url=args.target_url,mode=args.mode, referral_url=referral_urls,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter, session_jitter=args.session_jitter, session_delay=args.session_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
         thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads, user_delay=args.user_delay, user_jitter=args.user_jitter)
+    elif args.mode == 'direct':
+        if not args.target_url or not args.number_of_sessions:
+            logging.error('[-] target_url and number_of_sessions are required for direct')
+            sys.exit(1)
+        session = session_builder(target_url=args.target_url, mode=args.mode, referral_url=[''],bounce_urls=args.bounce_urls,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounces=args.bounces, bounce_jitter=args.bounce_jitter,session_jitter=args.session_jitter, session_delay=args.session_delay,end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
+        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads,user_delay=args.user_delay, user_jitter=args.user_jitter)
+    elif args.mode == 'organic':
+        if not args.target_url or not args.number_of_sessions:
+            logging.error('[-] target_url and number_of_sessions are required for organic')
+            sys.exit(1)
+        session = session_builder(target_url=args.target_url, mode=args.mode, referral_url=['https://www.google.com'],auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter,session_jitter=args.session_jitter, session_delay=args.session_delay,end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
+        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads,user_delay=args.user_delay, user_jitter=args.user_jitter)
 
 def build_geo_list(geo_list):
     list = []
@@ -112,6 +126,12 @@ def build_geo_list(geo_list):
             list.append(int(item))
     return list
 
+def url_validator(url):
+    result = urlparse(url)
+    if result.scheme != '' and result.netloc != '':
+        return True
+    else:
+        return False
 
 def jitter_type(x):
     x = float(x)
@@ -149,7 +169,7 @@ def thread_worker(i, q, session, delay=5, jitter=.50):
         q.task_done()
 
 class session_builder:
-    def __init__(self, target_url, referral_url,mode='referral', bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, end_with=False, tracking_id=None, geo_id='',bounce_jitter=.50,geo_list=None):
+    def __init__(self, target_url, referral_url,mode='referral', auto_target_pool=0,auto_target_keyword='',bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20, end_with=False, tracking_id=None, geo_id='',bounce_jitter=.50,geo_list=None):
         self.target_url = target_url
         self.referral_url = referral_url
         self.mode = mode
@@ -165,6 +185,8 @@ class session_builder:
         self.bounce_pool = bounce_pool
         self.bounce_jitter = bounce_jitter
         self.geo_list = geo_list
+        self.auto_target_pool = auto_target_pool
+        self.auto_target_keyword = auto_target_keyword
 
         #end_with logic
         if self.bounces == 0:
@@ -186,7 +208,11 @@ class session_builder:
         #grabs tracking ID from target site.
         if self.tracking_id is None:
             logging.info('[*] trackingID not provided. attempting to automatically collect')
-            page = requests.get(self.target_site,proxies=proxies,verify=(not ignore_certs))
+            if url_validator(self.target_site):
+                page = requests.get(self.target_site,proxies=proxies,verify=(not ignore_certs))
+            else:
+                logging.error('[-] cannot get trackingID. not a valid target site')
+                sys.exit(1)
             try:
                 m = re.search("'(UA-(.*))',", page.text)
                 self.tracking_id = str(m.group(1))
@@ -203,6 +229,18 @@ class session_builder:
             logging.info('[+] Grabbed %s bounce URLs using Google', str(sum(1 for i in search_results)))
             for result in search_results:
                 self.bounce_urls.append(str(result))
+
+        #if auto target urls are need, grabs them
+        if self.auto_target_pool > 0:
+            logging.info('[*] Target URLs are needed.')
+            self.target_url = []
+            if self.auto_target_keyword == '':
+                search_results = list(google.search(query="site:"+self.target_site, num=self.auto_target_pool,stop=1))
+            else:
+                search_results = list(google.search(query="site:" + self.target_site + ' ' + self.auto_target_keyword, num=self.auto_target_pool, stop=1))
+            logging.info('[+] Grabbed %s target URLs using Google', str(sum(1 for i in search_results)))
+            for result in search_results:
+                self.target_url.append(str(result))
 
 
     def random_unique_cid(self):
@@ -261,94 +299,6 @@ class session_builder:
 
         return behavior[:-4]
 
-class traffic_attack:
-    def __init__(self,target_site,target_site_urls=None,target_site_keyword=None,tracking_id=None,target_site_url_pool=10,referral_urls=None, referral_keyword=None,referral_pool=20,bounce_urls = None, session_delay=30, session_jitter=.50, bounces=0, bounce_pool = 20):
-        self.referral_urls = referral_urls
-        self.referral_keyword = referral_keyword
-        self.referral_pool = referral_pool
-        self.target_site_urls = target_site_urls
-        self.target_site_url_pool = target_site_url_pool
-        self.target_site_keyword = target_site_keyword
-        self.target_site = target_site
-        self.bounce_urls = bounce_urls
-        self.session_delay = session_delay
-        self.session_jitter = session_jitter
-        self.bounces = bounces
-        self.bounce_pool = bounce_pool
-        self.tracking_id = tracking_id
-
-        if not self.referral_urls and not self.referral_keyword:
-            logging.error('[-] Needs either a referral_url or keyword.')
-            sys.exit(1)
-        if self.referral_urls and self.referral_keyword:
-            logging.error('[-] Needs either a referral_url or keyword. Not both.')
-            sys.exit(1)
-        if self.referral_keyword and not self.referral_pool:
-            logging.error('[-] Needs referral pool.')
-            sys.exit(1)
-
-        if self.tracking_id is None:
-            page = requests.get(self.target_site,proxies=proxies,verify=(not ignore_certs))
-            try:
-                m = re.search("'(UA-(.*))',", page.text)
-                self.tracking_id = str(m.group(1))
-            except:
-                logging.error('trackingID not found. target may not be running analytics')
-                sys.exit(1)
-
-        if self.referral_keyword:
-            logging.info('[*] Referral URLs are needed.')
-            self.referral_urls = []
-            search_results = list(google.search(query=self.referral_keyword, num=self.referral_pool, stop=1))
-            logging.info('[+] Grabbed %s referral URLs using Google', str(sum(1 for i in search_results)))
-            for result in search_results:
-                self.referral_urls.append(str(result))
-
-        if not self.target_site_urls:
-            logging.info('[*] Target URLs are needed.')
-            self.target_site_urls = []
-            if not self.target_site_keyword:
-                search_results = list(google.search(query="site:"+self.target_site, num=self.target_site_url_pool,stop=1))
-            else:
-                search_results = list(google.search(query="site:" + self.target_site + ' '+self.target_site_keyword, num=self.target_site_url_pool, stop=1))
-            logging.info('[+] Grabbed %s target URLs using Google', str(sum(1 for i in search_results)))
-            for result in search_results:
-                self.target_site_urls.append(str(result))
-
-        if self.bounces != 0 and self.bounce_urls is None:
-            logging.info('[*] Bounce URLs are needed.')
-            self.bounce_urls = []
-            search_results = list(google.search(query="site:"+self.target_site, num=self.bounce_pool,stop=1))
-            logging.info('[+] Grabbed %s bounce URLs using Google', str(sum(1 for i in search_results)))
-            for result in search_results:
-                self.bounce_urls.append(str(result))
-
-    def run(self,client_id=None):
-        count =0
-        while count < len(self.target_site_urls):
-            pages = []
-            request = analytics_request(document_location=self.target_site_urls[count], document_referrer=self.referral_urls[random.randint(0,(len(self.referral_urls)-1))], client_id=client_id,tracking_id=self.tracking_id, geo_id='')
-            pages.append(request.document_referrer)
-            pages.append(self.target_site_urls[count])
-            last_page = self.target_site_urls[count]
-            request.send()
-            count = count + 1
-            bounce_count = 0
-
-            while (bounce_count < self.bounces):
-                delay = self.session_delay - random.randint(0,int(self.session_delay * self.session_jitter))
-                logging.debug('[*] Session sleep for %i seconds.', delay)
-                time.sleep(delay)
-                bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,len(self.bounce_urls)-1)],document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id='')
-                bounce_request.send()
-                pages.append(bounce_request.document_location)
-                last_page = bounce_request.document_location
-                bounce_count += 1
-            behavior = ''
-            for page in pages:
-                behavior = behavior + page + ' => '
-            print(behavior[:-4])
-
 
 def ascii_art():
     print("""
@@ -364,9 +314,6 @@ __   __   __   __   __   __   .-. __   __ .-. __   __
 Website:  https://zonksec.com
 Twitter:  @zonksec
 """)
-
-
-
 
 class analytics_request:
     def __init__(self,document_referrer,document_location,client_id,tracking_id=None,version=1,hit_type='pageview',user_agent ='Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36',geo_id ='US', anon_ip =1):
@@ -391,9 +338,17 @@ class analytics_request:
         params['cid'] = self.client_id
         params['t'] = self.hit_type
         params['aip'] = self.anon_ip
-        params['dl'] = self.document_location
+        if url_validator(self.document_location):
+            params['dl'] = self.document_location
+        else:
+            logging.error('[-] document_location is not a valid url')
+            os._exit(1)
         if not self.document_referrer == '':
-            params['dr'] = self.document_referrer
+            if url_validator(self.document_referrer):
+                params['dr'] = self.document_referrer
+            else:
+                logging.error('[-] document_referrer is not a valid url')
+                os._exit(1)
         params['geoid'] = self.geo_id
         params['ua'] = self.user_agent
 
