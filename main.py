@@ -27,7 +27,7 @@ def main():
     }
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m','--mode',choices=['referral', 'google_keyword','direct','organic'],help='required.',required=True)
+    parser.add_argument('-m','--mode',choices=['referral', 'google_keyword_referral','direct','organic'],help='required.',required=True)
     parser.add_argument('-v', '--verbose', help="increase output verbosity",action="store_true")
     parser.add_argument('--target_url',nargs='+', help='one or more URLs to target', metavar='')
     parser.add_argument('--referral_url',nargs='+', help='one or more URLs to refer traffic from',metavar='')
@@ -42,10 +42,10 @@ def main():
     parser.add_argument('--user_jitter', help='amount of randomness in user_delay', default=0, type=jitter_type, metavar='')
     parser.add_argument('--bounces', help='number of bounces between target pages',type=int,metavar='',default=0)
     parser.add_argument('--bounce_urls', help='specific URLs to bounce too. If not set, it will be auto-populated via Google Search',nargs='+',metavar='')
-    parser.add_argument('--bounce_jitter',metavar='',help='amount of randomness in bounce URL selection',type=jitter_type,default=0)
-    parser.add_argument('--bounce_pool',metavar='',help='determines # of URLs to retrieve from Google, if not proving bounce_urls',type=int,default=20)
-    parser.add_argument('--session_delay',metavar='',help='amount of seconds between bounces in a session',type=int,default=0)
-    parser.add_argument('--session_jitter',metavar='',help='amount of randomness in session_delay',type=jitter_type,default=0)
+    parser.add_argument('--bounce_length_jitter',metavar='',help='amount of randomness in # of bounces',type=jitter_type,default=0)
+    parser.add_argument('--bounce_pool',metavar='',help='determines # of URLs to retrieve from Google, if not providing bounce_urls',type=int,default=20)
+    parser.add_argument('--bounce_delay',metavar='',help='amount of seconds between bounces in a session',type=int,default=0)
+    parser.add_argument('--bounce_jitter',metavar='',help='amount of randomness in bounce_delay',type=jitter_type,default=0)
     parser.add_argument('--end_with',action="store_true",help='end with a bounce to target page')
     parser.add_argument('--proxy', help='use a HTTP or SOCKS proxy to make requests. note: google searches not included', metavar='')
     parser.add_argument('--ignore_certs', help='ignore ssl certs when making requests. note: google searches not included',action="store_true")
@@ -88,9 +88,9 @@ def main():
         if not args.target_url or not args.referral_url or not args.number_of_sessions:
             logging.error('[-] target_url,referral_url, and number_of_sessions are required for referral attack')
             sys.exit(1)
-        session = session_builder(target_url=args.target_url,mode=args.mode,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, referral_url=args.referral_url, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter, session_jitter=args.session_jitter, session_delay=args.session_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
+        session = session_builder(target_url=args.target_url,mode=args.mode,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, referral_url=args.referral_url, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_length_jitter, session_jitter=args.bounce_jitter, session_delay=args.bounce_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
         thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads, user_delay=args.user_delay, user_jitter=args.user_jitter)
-    elif args.mode == 'google_keyword':
+    elif args.mode == 'google_keyword_referral':
         if not args.target_url or not args.referral_keyword or not args.referral_pool or not args.number_of_sessions:
             logging.error('[-] target_url,referral_keyword, referral_pool, and number_of_sessions are required for google keyword')
             sys.exit(1)
@@ -100,19 +100,19 @@ def main():
         logging.info('[+] Grabbed %s referral URLs using Google', str(sum(1 for i in search_results)))
         for result in search_results:
             referral_urls.append(str(result))
-        session = session_builder(target_url=args.target_url,mode=args.mode, referral_url=referral_urls,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter, session_jitter=args.session_jitter, session_delay=args.session_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
+        session = session_builder(target_url=args.target_url,mode=args.mode, referral_url=referral_urls,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_length_jitter, session_jitter=args.bounce_jitter, session_delay=args.bounce_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
         thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads, user_delay=args.user_delay, user_jitter=args.user_jitter)
     elif args.mode == 'direct':
         if not args.target_url or not args.number_of_sessions:
             logging.error('[-] target_url and number_of_sessions are required for direct')
             sys.exit(1)
-        session = session_builder(target_url=args.target_url, mode=args.mode, referral_url=[''],bounce_urls=args.bounce_urls,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounces=args.bounces, bounce_jitter=args.bounce_jitter,session_jitter=args.session_jitter, session_delay=args.session_delay,end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
+        session = session_builder(target_url=args.target_url, mode=args.mode, referral_url=[''],bounce_urls=args.bounce_urls,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounces=args.bounces, bounce_jitter=args.bounce_length_jitter,session_jitter=args.bounce_jitter, session_delay=args.bounce_delay,end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
         thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads,user_delay=args.user_delay, user_jitter=args.user_jitter)
     elif args.mode == 'organic':
         if not args.target_url or not args.number_of_sessions:
             logging.error('[-] target_url and number_of_sessions are required for organic')
             sys.exit(1)
-        session = session_builder(target_url=args.target_url, mode=args.mode, referral_url=['https://www.google.com'],auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_jitter,session_jitter=args.session_jitter, session_delay=args.session_delay,end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
+        session = session_builder(target_url=args.target_url, mode=args.mode, referral_url=['https://www.google.com'],auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_length_jitter,session_jitter=args.bounce_jitter, session_delay=args.bounce_delay,end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
         thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads,user_delay=args.user_delay, user_jitter=args.user_jitter)
 
 def build_geo_list(geo_list):
@@ -229,18 +229,32 @@ class session_builder:
             logging.info('[+] Grabbed %s bounce URLs using Google', str(sum(1 for i in search_results)))
             for result in search_results:
                 self.bounce_urls.append(str(result))
+        elif self.bounces != 0 or self.bounce_urls != None:
+            # verify all urls from bounce_urls are same domain if manually set
+            o = urlparse(self.target_url[0])
+            match = o.netloc
+            for target in self.bounce_urls:
+                o = urlparse(target)
+                if not o.netloc == match:
+                    logging.error('[-] not all bounce_urls are from same target site')
+                    sys.exit(1)
 
         #if auto target urls are need, grabs them
         if self.auto_target_pool > 0:
             logging.info('[*] Target URLs are needed.')
             self.target_url = []
-            if self.auto_target_keyword == '':
+            if self.auto_target_keyword == None or self.auto_target_keyword == '':
                 search_results = list(google.search(query="site:"+self.target_site, num=self.auto_target_pool,stop=1))
             else:
                 search_results = list(google.search(query="site:" + self.target_site + ' ' + self.auto_target_keyword, num=self.auto_target_pool, stop=1))
             logging.info('[+] Grabbed %s target URLs using Google', str(sum(1 for i in search_results)))
             for result in search_results:
                 self.target_url.append(str(result))
+
+        #display urls for debug
+        logging.debug('[+] Referral URLs: ' + str(self.referral_url))
+        logging.debug('[+] Target URLs: ' + str(self.target_url))
+        logging.debug('[+] Bounce URLs: ' + str(self.bounce_urls))
 
 
     def random_unique_cid(self):
@@ -264,6 +278,7 @@ class session_builder:
             logging.error('[-] Missing client_id or geo_id')
             sys.exit(1)
         pages = []
+        delays = []
 
         selected_target = self.target_url[random.randint(0,len(self.target_url)-1)]
         selected_referral = self.referral_url[random.randint(0,len(self.referral_url)-1)]
@@ -271,13 +286,14 @@ class session_builder:
         pages.append(last_page)
         target_request = analytics_request(document_location=selected_target,document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=geo_id)
         target_request.send()
-        pages.append('[T]'+selected_target)
+        pages.append('[T] '+selected_target)
         bounce_count = 0
         last_page = selected_target
         bounce_end = self.bounces - random.randint(0,int(self.bounces * self.bounce_jitter))
         while (bounce_count < bounce_end):
             delay = self.page_delay - random.randint(0,int(self.page_delay * self.page_delay_jitter))
             logging.debug('[*] Session sleep for %i seconds.', delay)
+            delays.append(str(delay))
             time.sleep(delay)
             bounce_request = analytics_request(document_location=self.bounce_urls[random.randint(0,len(self.bounce_urls)-1)],document_referrer=last_page,client_id=client_id,tracking_id=self.tracking_id,geo_id=geo_id)
             bounce_request.send()
@@ -288,14 +304,23 @@ class session_builder:
         if self.end_with:
             delay = self.page_delay - random.randint(0, int(self.page_delay * self.page_delay_jitter))
             logging.debug('[*] Session sleep for %i seconds.', delay)
+            delays.append(str(delay))
             time.sleep(delay)
             target_request = analytics_request(document_location=selected_target, document_referrer=last_page, client_id=client_id,tracking_id=self.tracking_id,geo_id=geo_id)
             target_request.send()
-            pages.append('[T]'+selected_target)
+            pages.append('[T] '+selected_target)
 
         behavior = ''
+        count = 0
         for page in pages:
-            behavior = behavior + page + ' => '
+            if count > 0 and count <= len(delays):
+                if delays[count-1] == '0':
+                    behavior = behavior + page + ' => '
+                else:
+                    behavior = behavior + page + ' ('+ delays[count-1] + ' sec delay) => '
+            else:
+                behavior = behavior + page + ' => '
+            count += 1
 
         return behavior[:-4]
 
