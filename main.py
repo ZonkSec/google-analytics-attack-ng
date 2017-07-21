@@ -38,8 +38,8 @@ def main():
     parser.add_argument('--referral_keyword', metavar='',help='keyword to retrieve referral URLs from Google')
     parser.add_argument('--referral_pool', metavar='', help='determines # of referral URLs to retrieve from Google based on referral_keyword',type=int,default=20)
     parser.add_argument('--geo_list', help='list of origin geo locations. \'criteriaID\' or \'criteriaIDs-criteriaIDs\'',metavar='',nargs='+')
-    parser.add_argument('--user_delay', help='delay between users/threads', default=0, type=int, metavar='')
-    parser.add_argument('--user_jitter', help='amount of randomness in user_delay', default=0, type=jitter_type, metavar='')
+    parser.add_argument('--thread_delay', help='delay between users/threads', default=0, type=int, metavar='')
+    parser.add_argument('--thread_jitter', help='amount of randomness in thread_delay', default=0, type=jitter_type, metavar='')
     parser.add_argument('--bounces', help='number of bounces between target pages',type=int,metavar='',default=0)
     parser.add_argument('--bounce_urls', help='specific URLs to bounce too. If not set, it will be auto-populated via Google Search',nargs='+',metavar='')
     parser.add_argument('--bounce_length_jitter',metavar='',help='amount of randomness in # of bounces',type=jitter_type,default=0)
@@ -89,7 +89,7 @@ def main():
             logging.error('[-] target_url,referral_url, and number_of_sessions are required for referral attack')
             sys.exit(1)
         session = session_builder(target_url=args.target_url,mode=args.mode,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, referral_url=args.referral_url, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_length_jitter, session_jitter=args.bounce_jitter, session_delay=args.bounce_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
-        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads, user_delay=args.user_delay, user_jitter=args.user_jitter)
+        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads, user_delay=args.thread_delay, user_jitter=args.thread_jitter)
     elif args.mode == 'google_keyword_referral':
         if not args.target_url or not args.referral_keyword or not args.referral_pool or not args.number_of_sessions:
             logging.error('[-] target_url,referral_keyword, referral_pool, and number_of_sessions are required for google keyword')
@@ -101,19 +101,19 @@ def main():
         for result in search_results:
             referral_urls.append(str(result))
         session = session_builder(target_url=args.target_url,mode=args.mode, referral_url=referral_urls,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_length_jitter, session_jitter=args.bounce_jitter, session_delay=args.bounce_delay, end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
-        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads, user_delay=args.user_delay, user_jitter=args.user_jitter)
+        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads, user_delay=args.thread_delay, user_jitter=args.thread_jitter)
     elif args.mode == 'direct':
         if not args.target_url or not args.number_of_sessions:
             logging.error('[-] target_url and number_of_sessions are required for direct')
             sys.exit(1)
         session = session_builder(target_url=args.target_url, mode=args.mode, referral_url=[''],bounce_urls=args.bounce_urls,auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounces=args.bounces, bounce_jitter=args.bounce_length_jitter,session_jitter=args.bounce_jitter, session_delay=args.bounce_delay,end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
-        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads,user_delay=args.user_delay, user_jitter=args.user_jitter)
+        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads,user_delay=args.thread_delay, user_jitter=args.thread_jitter)
     elif args.mode == 'organic':
         if not args.target_url or not args.number_of_sessions:
             logging.error('[-] target_url and number_of_sessions are required for organic')
             sys.exit(1)
         session = session_builder(target_url=args.target_url, mode=args.mode, referral_url=['https://www.google.com'],auto_target_pool=args.auto_target_pool,auto_target_keyword=args.auto_target_keyword, bounce_urls=args.bounce_urls, bounces=args.bounces, bounce_jitter=args.bounce_length_jitter,session_jitter=args.bounce_jitter, session_delay=args.bounce_delay,end_with=args.end_with, bounce_pool=args.bounce_pool, geo_list=args.geo_list)
-        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads,user_delay=args.user_delay, user_jitter=args.user_jitter)
+        thread_master(session=session, number_of_sessions=args.number_of_sessions, threads=args.threads,user_delay=args.thread_delay, user_jitter=args.thread_jitter)
 
 def build_geo_list(geo_list):
     list = []
